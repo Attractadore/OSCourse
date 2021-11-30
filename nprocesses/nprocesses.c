@@ -8,8 +8,7 @@
 
 void run(unsigned n) {
     key_t key = ftok(__FILE__, 1);
-    fprintf(stderr, "Key %d\n", key);
-    int q = msgget(key, IPC_CREAT | 0666);
+    int q = msgget(key, IPC_CREAT | 0600);
     long last = 0;
     for (unsigned i = 0; i < n; i++) {
         pid_t pid = fork();
@@ -18,19 +17,22 @@ void run(unsigned n) {
                 long msgtyp = i;
                 msgrcv(q, &msgtyp, 0, msgtyp, 0);
             }
-            fprintf(stdout, "I: %u, PID: %d, PPID %d\n", i, getpid(), getppid());
+            fprintf(stdout, "%u\n", i);
+            fflush(stdout);
             long msgtyp = i + 1;
             msgsnd(q, &msgtyp, 0, 0);
             exit(0);
         } 
         if (pid < 0) {
-            fprintf(stderr, "Failed to fork\n");
             break;
         }
         last = i + 1;
     }
     if (last) {
         msgrcv(q, &last, 0, last, 0);
+        if (last < n) {
+            perror("Failed to fork");
+        }
     }
 }
 
