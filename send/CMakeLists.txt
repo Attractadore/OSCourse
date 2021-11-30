@@ -1,0 +1,7 @@
+add_library(SendCommon common.h common.c)
+add_executable(SendClient client.c)
+target_link_libraries(SendClient SendCommon)
+target_compile_definitions(SendClient PRIVATE _GNU_SOURCE)
+add_executable(SendServer server.c common.c)
+target_link_libraries(SendServer SendCommon)
+target_compile_definitions(SendServer PRIVATE _GNU_SOURCE)

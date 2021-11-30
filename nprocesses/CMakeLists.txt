@@ -1,0 +1,2 @@
+add_executable(nprocesses nprocesses.c)
+target_compile_definitions(nprocesses PRIVATE _GNU_SOURCE)
