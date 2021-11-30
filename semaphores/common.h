@@ -1,29 +1,31 @@
 #pragma once
 #include <stdio.h>
-
-typedef struct {
-    enum { SHARED_MEMORY_SIZE = 4096 };
-    unsigned size;
-    char buffer[SHARED_MEMORY_SIZE];
-} ShmBuffer;
+#include <sys/ipc.h>
+#include <sys/types.h>
 
 #ifdef DEBUG 
 #define DEBUG_PRINT(...) fprintf(stderr, __VA_ARGS__)
 #else
-#define DEBUG_PRINT(s, ...) do {} while(0)
+#define DEBUG_PRINT(...) do {} while(0)
 #endif
 
-extern const char* ftok_name;
-key_t getSemaphoreKey();
-key_t getSharedMemoryKey();
+typedef struct {
+    ssize_t size;
+    enum { BUFFER_SIZE = 4096 - sizeof(ssize_t) };
+    char buffer[BUFFER_SIZE];
+} TransferBuffer;
 
-enum {
-    CLIENT_SEMAPHORE_INDEX = 0,
-    SERVER_SEMAPHORE_INDEX = 1,
-    SYNC_SEMAPHORE_INDEX = 2,
-};
+typedef struct {
+    TransferBuffer stub;
+    TransferBuffer buffers[];
+} SharedMemory;
 
-enum {
-    SEMAPHORE_FTOK = 1,
-    SHARED_MEMORY_FTOK = 2,
-};
+SharedMemory* getSharedMemory();
+int getBlockSemaphore(int i);
+TransferBuffer* getBlockBuffer(SharedMemory* shm, int i);
+
+int selectServerBlock();
+int selectClientBlock();
+
+void copyIntoSharedMemory(int sem_set, TransferBuffer* buffer, int fd);
+void copyFromSharedMemory(int sem_set, const volatile TransferBuffer* buffer, int fd);
