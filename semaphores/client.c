@@ -10,17 +10,21 @@ int main() {
         return -1;
     }
 
-    int i = selectClientBlock();
-    if (i < 0) {
-        fprintf(stderr, "Failed to select client block\n");
-        return -1;
-    }
-
-    int sem_set = getBlockSemaphore(i);
+    int sem_set = getSemaphoreSet();
     if (sem_set == -1) {
         fprintf(stderr, "Failed to open sem set\n");
         return -1;
     }
 
-    copyFromSharedMemory(sem_set, getBlockBuffer(shm, i), STDOUT_FILENO);
+    int res = acquireClient(sem_set);
+    if (res == -1) {
+        fprintf(stderr, "Failed to acquire from client\n");
+        return -1;
+    }
+
+    res = copyFromSharedMemory(sem_set, shm, STDOUT_FILENO);
+    if (res == -1) {
+        fprintf(stderr, "Failed to recieve from server\n");
+        return -1;
+    }
 }

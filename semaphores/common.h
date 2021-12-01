@@ -1,7 +1,5 @@
 #pragma once
 #include <stdio.h>
-#include <sys/ipc.h>
-#include <sys/types.h>
 
 #ifdef DEBUG 
 #define DEBUG_PRINT(...) fprintf(stderr, __VA_ARGS__)
@@ -11,21 +9,19 @@
 
 typedef struct {
     ssize_t size;
-    enum { BUFFER_SIZE = 4096 - sizeof(ssize_t) };
+    enum { BUFFER_SIZE = 4096};
     char buffer[BUFFER_SIZE];
 } TransferBuffer;
 
 typedef struct {
-    TransferBuffer stub;
-    TransferBuffer buffers[];
+    TransferBuffer buffer;
 } SharedMemory;
 
 SharedMemory* getSharedMemory();
-int getBlockSemaphore(int i);
-TransferBuffer* getBlockBuffer(SharedMemory* shm, int i);
+int getSemaphoreSet();
 
-int selectServerBlock();
-int selectClientBlock();
+int acquireServer(int sem_set);
+int acquireClient(int sem_set);
 
-void copyIntoSharedMemory(int sem_set, TransferBuffer* buffer, int fd);
-void copyFromSharedMemory(int sem_set, const volatile TransferBuffer* buffer, int fd);
+int copyIntoSharedMemory(int sem_set, SharedMemory* shm, int fd);
+int copyFromSharedMemory(int sem_set, const volatile SharedMemory* shm, int fd);

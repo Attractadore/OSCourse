@@ -1,8 +1,7 @@
 #include "common.h"
 
-#include <assert.h>
 #include <errno.h>
-#include <iso646.h>
+#include <fcntl.h>
 #include <stdbool.h>
 #include <sys/sem.h>
 #include <sys/shm.h>
@@ -10,22 +9,17 @@
 
 enum {
     // There is a server in this block if this is one
-    BLOCK_SERVER_SEM_ID = 0,
+    BLOCK_SERVER_SEM_ID,
     // There is a client in this block if this is one
-    BLOCK_CLIENT_SEM_ID = 1,
-    // A client can connect to this block if this is one
-    BLOCK_BEGIN_SEM_ID = 2,
+    BLOCK_CLIENT_SEM_ID,
+
     // Number of buffers that can be read from
-    BLOCK_FULL_SEM_ID = 3,
+    BLOCK_FULL_SEM_ID,
     // Number of buffers that can be written to
-    BLOCK_EMPTY_SEM_ID = 4,
+    BLOCK_EMPTY_SEM_ID,
 
     BLOCK_NUM_SEMS,
 };
-
-static size_t getMaxBlocks() {
-    return 10;
-}
 
 union semun {
     int              val;    /* Value for SETVAL */
@@ -37,24 +31,32 @@ union semun {
 
 #define ARRAY_SIZE(arr) (sizeof(arr) / sizeof(*arr))
 
-static key_t getShmKey() {
-    return ftok(__FILE__, 1);
+static const char* tok_file = "/tmp/sem_tok_file";
+static int createTokFile() {
+    int fd = open(tok_file, O_CREAT | O_WRONLY, 0600);
+    if (fd == -1) {
+        return -1;
+    }
+    close(fd);
+    return 0;
 }
 
-static size_t getSharedMemorySize() {
-    return sizeof(SharedMemory) + sizeof(TransferBuffer[32000]);
+
+static key_t getShmKey() {
+    if (createTokFile()) {
+        return -1;
+    }
+    return ftok(tok_file, 1);
 }
 
 SharedMemory* getSharedMemory() {
-    DEBUG_PRINT("Get shm key\n");
+    DEBUG_PRINT("Open shm\n");
     key_t shm_key = getShmKey();
-    DEBUG_PRINT("Shm key is %d\n", shm_key);
     if (shm_key == -1) {
         perror("Failed to get shm key");
         return NULL;
     }
-    DEBUG_PRINT("Open shm\n");
-    int shm = shmget(shm_key, getSharedMemorySize(), IPC_CREAT | 0600);
+    int shm = shmget(shm_key, sizeof(SharedMemory), IPC_CREAT | 0600);
     if (shm == -1) {
         perror("Failed to open shm");
         return NULL;
@@ -70,78 +72,51 @@ SharedMemory* getSharedMemory() {
     return ptr;
 }
 
-TransferBuffer* getBlockBuffer(SharedMemory* shm, int i) {
-    return &shm->buffers[i];
-}
-
-#include <limits.h>
-
-static key_t getBlockSemKey(int i) {
-    assert("TODO: enable creating keys when i more than 8 bits" && 2 + i <= UCHAR_MAX);
-    return ftok(__FILE__, 2 + i);
-}
-
-int getBlockSemaphore(int i) {
-    key_t block_sem_key = getBlockSemKey(i);
-    if (block_sem_key == -1) {
+static key_t getSemSetKey() {
+    if (createTokFile()) {
         return -1;
     }
-    return semget(block_sem_key, BLOCK_NUM_SEMS, IPC_CREAT | 0600);
+    return ftok(tok_file, 2);
 }
 
-static int selectBlockImpl(struct sembuf* ops, size_t nops) {
-    size_t max_blocks = getMaxBlocks();
-    for (int i = 0; i < max_blocks; i++) {
-        DEBUG_PRINT("Get sem set for block %d\n", i);
-        int sem = getBlockSemaphore(i);       
-        if (sem == -1) {
-            fprintf(stderr, "Failed to get sem set for block %d\n", i);
-            perror("");
-        }
-        int res = semop(sem, ops, nops);
-        if (!res) {
-            return i;
-        }
+int getSemaphoreSet() {
+    DEBUG_PRINT("Open sem set\n");
+    key_t sem_key = getSemSetKey();
+    if (sem_key == -1) {
+        perror("Failed to get sem set key\n");
+        return -1;
     }
-    assert(!"TODO: handle case when no block is found");
-    return -1;
+    int sem = semget(sem_key, BLOCK_NUM_SEMS, IPC_CREAT | 0600);
+    if (sem == -1) {
+        perror("Failed to open sem set\n");
+        return -1;
+    }
+    DEBUG_PRINT("\n");
+    return sem;
 }
 
-int selectServerBlock() {
+int acquireServer(int sem_set) {
     struct sembuf ops[] = {
         {
             .sem_num = BLOCK_SERVER_SEM_ID,
             .sem_op = 0,
-            .sem_flg = IPC_NOWAIT,
         },
         {
             .sem_num = BLOCK_CLIENT_SEM_ID,
             .sem_op = 0,
-            .sem_flg = IPC_NOWAIT,
         },
         {
             .sem_num = BLOCK_SERVER_SEM_ID,
             .sem_op = 1,
-            .sem_flg = IPC_NOWAIT | SEM_UNDO,
-        },
-        {
-            .sem_num = BLOCK_BEGIN_SEM_ID,
-            .sem_op = 1,
-            .sem_flg = IPC_NOWAIT | SEM_UNDO,
+            .sem_flg = SEM_UNDO,
         },
     };
-    DEBUG_PRINT("Select server block\n");
-    int i = selectBlockImpl(ops, ARRAY_SIZE(ops));
-    if (i == -1) {
+    DEBUG_PRINT("Acquire from server\n");
+    int res = semop(sem_set, ops, ARRAY_SIZE(ops));
+    if (res == -1) {
+        perror("Failed to acquire from server");
         return -1;
     }
-    DEBUG_PRINT("Selected block is %d\n", i);
-
-    int sem_set = getBlockSemaphore(i);
-    if (sem_set == -1) {
-        return -1;
-    }
-    DEBUG_PRINT("Block sem set is %d\n", sem_set);
 
     union semun v;
     v.val = 0;
@@ -149,6 +124,7 @@ int selectServerBlock() {
     DEBUG_PRINT("Set full sem to %d\n", v.val);
     semctl(sem_set, BLOCK_FULL_SEM_ID, SETVAL, v);
     if (errno) {
+        perror("Failed to init sem");
         return -1;
     }
 
@@ -157,118 +133,212 @@ int selectServerBlock() {
     DEBUG_PRINT("Set empty sem to %d\n", v.val);
     semctl(sem_set, BLOCK_EMPTY_SEM_ID, SETVAL, v);
     if (errno) {
+        perror("Failed to init sem");
         return -1;
     }
 
     DEBUG_PRINT("Server sem value: %d\n", semctl(sem_set, BLOCK_SERVER_SEM_ID, GETVAL));
     DEBUG_PRINT("Client sem value: %d\n", semctl(sem_set, BLOCK_CLIENT_SEM_ID, GETVAL));
-    DEBUG_PRINT("Begin sem value: %d\n", semctl(sem_set, BLOCK_BEGIN_SEM_ID, GETVAL));
     DEBUG_PRINT("Full sem value: %d\n", semctl(sem_set, BLOCK_FULL_SEM_ID, GETVAL));
     DEBUG_PRINT("Empty sem value: %d\n", semctl(sem_set, BLOCK_EMPTY_SEM_ID, GETVAL));
     DEBUG_PRINT("\n");
 
-    return i;
+    return 0;
 }
 
-int selectClientBlock() {
+int acquireClient(int sem_set) {
+    DEBUG_PRINT("Acquire from client\n");
     struct sembuf ops[] = {
+        {
+            .sem_num = BLOCK_SERVER_SEM_ID,
+            .sem_op = -1,
+        },
+        {
+            .sem_num = BLOCK_SERVER_SEM_ID,
+            .sem_op = 0,
+        },
+        {
+            .sem_num = BLOCK_SERVER_SEM_ID,
+            .sem_op = 1,
+        },
+        {
+            .sem_num = BLOCK_CLIENT_SEM_ID,
+            .sem_op = 0,
+        },
         {
             .sem_num = BLOCK_CLIENT_SEM_ID,
             .sem_op = 1,
-            .sem_flg = IPC_NOWAIT | SEM_UNDO,
-        },
-        {
-            .sem_num = BLOCK_BEGIN_SEM_ID,
-            .sem_op = -1,
-            .sem_flg = IPC_NOWAIT,
+            .sem_flg = SEM_UNDO,
         },
     };
-    int i = -1;
-    selectBlockImpl(ops, ARRAY_SIZE(ops));
+    int res = semop(sem_set, ops, ARRAY_SIZE(ops));
+    if (res == -1) {
+        perror("Failed to acquire from client");
+        return -1;
+    }
 
-    int sem_set = getBlockSemaphore(i);
     DEBUG_PRINT("Server sem value: %d\n", semctl(sem_set, BLOCK_SERVER_SEM_ID, GETVAL));
     DEBUG_PRINT("Client sem value: %d\n", semctl(sem_set, BLOCK_CLIENT_SEM_ID, GETVAL));
-    DEBUG_PRINT("Begin sem value: %d\n", semctl(sem_set, BLOCK_BEGIN_SEM_ID, GETVAL));
     DEBUG_PRINT("Full sem value: %d\n", semctl(sem_set, BLOCK_FULL_SEM_ID, GETVAL));
     DEBUG_PRINT("Empty sem value: %d\n", semctl(sem_set, BLOCK_EMPTY_SEM_ID, GETVAL));
     DEBUG_PRINT("\n");
 
-    return i;
+    return 0;
 }
 
-static const struct timespec timeout = {
-    .tv_sec = 60,
-};
+int waitForClient(int sem_set) {
+    struct sembuf wait_ops[] = {
+        {
+            .sem_num = BLOCK_CLIENT_SEM_ID,
+            .sem_op = -1,
+        },
+        {
+            .sem_num = BLOCK_CLIENT_SEM_ID,
+            .sem_op = 0,
+        },
+        {
+            .sem_num = BLOCK_CLIENT_SEM_ID,
+            .sem_op = 1,
+        },
+    };
+    return semop(sem_set, wait_ops, ARRAY_SIZE(wait_ops));
+}
 
-void copyIntoSharedMemory(int sem_set, TransferBuffer* buffer, int fd) {
+int copyIntoSharedMemory(int sem_set, SharedMemory* shm, int fd) {
+    DEBUG_PRINT("Wait for client\n");
+    int res = waitForClient(sem_set);
+    if (res == -1) {
+        perror("Failed to wait for client");
+        return -1;
+    }
+
     DEBUG_PRINT("Begin copying to shm\n");
-    DEBUG_PRINT("Sem set is %d\n", sem_set);
-
     while (true) {
         DEBUG_PRINT("Wait for client to read\n");
-        DEBUG_PRINT("Empty sem value: %d\n", semctl(sem_set, BLOCK_EMPTY_SEM_ID, GETVAL));
-        struct sembuf wait_op = {
-            .sem_num = BLOCK_EMPTY_SEM_ID,
-            .sem_op = -1,
+        struct sembuf wait_ops[] = {
+            {
+                .sem_num = BLOCK_CLIENT_SEM_ID,
+                .sem_op = -1,
+                .sem_flg = IPC_NOWAIT,
+            },
+            {
+                .sem_num = BLOCK_CLIENT_SEM_ID,
+                .sem_op = 0,
+                .sem_flg = IPC_NOWAIT,
+            },
+            {
+                .sem_num = BLOCK_CLIENT_SEM_ID,
+                .sem_op = 1,
+            },
+            {
+                .sem_num = BLOCK_EMPTY_SEM_ID,
+                .sem_op = -1,
+            },
+
         };
         errno = 0;
-        semtimedop(sem_set, &wait_op, 1, &timeout);
-        if (errno == EAGAIN) {
-            fprintf(stderr, "Client has died\n");
-            return;
+        semop(sem_set, wait_ops, ARRAY_SIZE(wait_ops));
+        if (errno) {
+            if (errno == EAGAIN) {
+                fprintf(stderr, "Client has died\n");
+            }
+            else {
+                perror("Failed to wait for client\n");
+            }
+            return -1;
         }
 
         DEBUG_PRINT("Read chunk\n");
-        buffer->size = read(fd, buffer->buffer, sizeof(buffer->buffer));
+        shm->buffer.size = read(fd, shm->buffer.buffer, sizeof(shm->buffer.buffer));
+        if (shm->buffer.size < 0) {
+            perror("Failed to read from fd");
+            return -1;
+        }
+        DEBUG_PRINT("Read %zd bytes\n", shm->buffer.size);
 
         DEBUG_PRINT("Wake up client\n");
-        DEBUG_PRINT("Full sem value: %d\n", semctl(sem_set, BLOCK_FULL_SEM_ID, GETVAL));
         struct sembuf write_op = {
             .sem_num = BLOCK_FULL_SEM_ID,
             .sem_op = 1,
         };
+        errno = 0;
         semop(sem_set, &write_op, 1);
+        if (errno) {
+            perror("Failed to wake up client\n");
+            return -1;
+        }
 
-        if (buffer->size <= 0) {
+        if (!shm->buffer.size) {
             DEBUG_PRINT("EOF\n");
-            return;
+            return 0;
         }
     }
 }
 
-void copyFromSharedMemory(int sem_set, const volatile TransferBuffer* buffer, int fd) {
+int copyFromSharedMemory(int sem_set, const volatile SharedMemory* shm, int fd) {
     DEBUG_PRINT("Begin copying from shm\n");
-    DEBUG_PRINT("Sem set is %d\n", sem_set);
-
     while (true) {
         DEBUG_PRINT("Wait for server to write\n");
-        DEBUG_PRINT("Full sem value: %d\n", semctl(sem_set, BLOCK_FULL_SEM_ID, GETVAL));
-        struct sembuf wait_op = {
-            .sem_num = BLOCK_FULL_SEM_ID,
-            .sem_op = -1,
+        struct sembuf wait_ops[] = {
+            {
+                .sem_num = BLOCK_SERVER_SEM_ID,
+                .sem_op = -1,
+                .sem_flg = IPC_NOWAIT,
+            },
+            {
+                .sem_num = BLOCK_SERVER_SEM_ID,
+                .sem_op = 0,
+                .sem_flg = IPC_NOWAIT,
+            },
+            {
+                .sem_num = BLOCK_SERVER_SEM_ID,
+                .sem_op = 1,
+            },
+            {
+                .sem_num = BLOCK_FULL_SEM_ID,
+                .sem_op = -1,
+            },
         };
         errno = 0;
-        semtimedop(sem_set, &wait_op, 1, &timeout);
-        if (errno == EAGAIN) {
-            fprintf(stderr, "Server has died\n");
-            return;
+        semop(sem_set, wait_ops, ARRAY_SIZE(wait_ops));
+        if (errno) {
+            if (errno == EAGAIN) {
+                fprintf(stderr, "Server has died\n");
+                return -1;
+            }
+            else {
+                perror("Failed to wait for server\n");
+                return -1;
+            }
         }
         
-        if (buffer->size > 0) {
+        if (shm->buffer.size > 0) {
             DEBUG_PRINT("Write chunk\n");
-            write(fd, buffer->buffer, buffer->size);
+            ssize_t total_num_written = 0;
+            while (total_num_written < shm->buffer.size) {
+                ssize_t num_written = write(fd, shm->buffer.buffer, shm->buffer.size);
+                if (num_written < 0) {
+                    perror("Failed to write to fd");
+                    return -1;
+                }
+                DEBUG_PRINT("Wrote %zd bytes\n", num_written);
+                total_num_written += num_written;
+            }
         } else {
             DEBUG_PRINT("EOF\n");
-            return;
+            return 0;
         }
 
         DEBUG_PRINT("Wake up server\n");
-        DEBUG_PRINT("Empty sem value: %d\n", semctl(sem_set, BLOCK_EMPTY_SEM_ID, GETVAL));
         struct sembuf read_op = {
             .sem_num = BLOCK_EMPTY_SEM_ID,
             .sem_op = 1,
         };
+        errno = 0;
         semop(sem_set, &read_op, 1);
+        if (errno) {
+            perror("Failed to wake up server");
+            return -1;
+        }
     }
 }
