@@ -17,6 +17,8 @@ enum {
     BLOCK_FULL_SEM_ID,
     // Number of buffers that can be written to
     BLOCK_EMPTY_SEM_ID,
+    // Server has set everything up
+    BLOCK_INIT_SEM_ID,
 
     BLOCK_NUM_SEMS,
 };
@@ -137,10 +139,25 @@ int acquireServer(int sem_set) {
         return -1;
     }
 
+    DEBUG_PRINT("Signal init sem\n");
+    struct sembuf finalize_ops[] = {
+        {
+            .sem_num = BLOCK_INIT_SEM_ID,
+            .sem_op = 1,
+            .sem_flg = SEM_UNDO,
+        },
+    };
+    res = semop(sem_set, finalize_ops, ARRAY_SIZE(finalize_ops));
+    if (res == -1) {
+        perror("Failed to signal init sem");
+        return -1;
+    }
+
     DEBUG_PRINT("Server sem value: %d\n", semctl(sem_set, BLOCK_SERVER_SEM_ID, GETVAL));
     DEBUG_PRINT("Client sem value: %d\n", semctl(sem_set, BLOCK_CLIENT_SEM_ID, GETVAL));
     DEBUG_PRINT("Full sem value: %d\n", semctl(sem_set, BLOCK_FULL_SEM_ID, GETVAL));
     DEBUG_PRINT("Empty sem value: %d\n", semctl(sem_set, BLOCK_EMPTY_SEM_ID, GETVAL));
+    DEBUG_PRINT("Init sem value: %d\n", semctl(sem_set, BLOCK_INIT_SEM_ID, GETVAL));
     DEBUG_PRINT("\n");
 
     return 0;
@@ -181,6 +198,7 @@ int acquireClient(int sem_set) {
     DEBUG_PRINT("Client sem value: %d\n", semctl(sem_set, BLOCK_CLIENT_SEM_ID, GETVAL));
     DEBUG_PRINT("Full sem value: %d\n", semctl(sem_set, BLOCK_FULL_SEM_ID, GETVAL));
     DEBUG_PRINT("Empty sem value: %d\n", semctl(sem_set, BLOCK_EMPTY_SEM_ID, GETVAL));
+    DEBUG_PRINT("Init sem value: %d\n", semctl(sem_set, BLOCK_INIT_SEM_ID, GETVAL));
     DEBUG_PRINT("\n");
 
     return 0;
@@ -198,6 +216,24 @@ int waitForClient(int sem_set) {
         },
         {
             .sem_num = BLOCK_CLIENT_SEM_ID,
+            .sem_op = 1,
+        },
+    };
+    return semop(sem_set, wait_ops, ARRAY_SIZE(wait_ops));
+}
+
+int waitForServer(int sem_set) {
+    struct sembuf wait_ops[] = {
+        {
+            .sem_num = BLOCK_INIT_SEM_ID,
+            .sem_op = -1,
+        },
+        {
+            .sem_num = BLOCK_INIT_SEM_ID,
+            .sem_op = 0,
+        },
+        {
+            .sem_num = BLOCK_INIT_SEM_ID,
             .sem_op = 1,
         },
     };
@@ -276,6 +312,13 @@ int copyIntoSharedMemory(int sem_set, SharedMemory* shm, int fd) {
 }
 
 int copyFromSharedMemory(int sem_set, const volatile SharedMemory* shm, int fd) {
+    DEBUG_PRINT("Wait for server\n");
+    int res = waitForServer(sem_set);
+    if (res == -1) {
+        perror("Failed to wait for server");
+        return -1;
+    }
+
     DEBUG_PRINT("Begin copying from shm\n");
     while (true) {
         DEBUG_PRINT("Wait for server to write\n");
