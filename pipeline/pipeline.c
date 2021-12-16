@@ -241,6 +241,9 @@ int main(int argc, const char* argv[]) {
     }
 
     size_t num_buffers = n - 1;
+    if (!num_buffers) {
+        return 0;
+    }
     char** buffers = NULL;
     size_t* buffer_sizes = NULL;
     char* allocation = NULL;
@@ -269,7 +272,7 @@ int main(int argc, const char* argv[]) {
         struct pollfd* write_fd = &fds[2 * i + 1];
         read_fd->fd = read_fds[i];
         read_fd->events = POLLIN;
-        write_fd->fd = write_fds[i];
+        write_fd->fd = -write_fds[i];
         write_fd->events = POLLOUT;
     }
     while(true) {
@@ -283,11 +286,17 @@ int main(int argc, const char* argv[]) {
 
             struct pollfd* read_fd = &fds[2 * i];
             struct pollfd* write_fd = &fds[2 * i + 1];
-            bool can_read = read_fd->revents & POLLIN;
-            bool can_write = write_fd->revents & POLLOUT;
+            DEBUG_PRINT("Read fd: %d; Write fd: %d\n", read_fd->fd, write_fd->fd);
+            DEBUG_PRINT("Num available: %zu\n", num_available[i]);
+            DEBUG_PRINT("POLLIN: %d\n", read_fd->revents & POLLIN);
+            DEBUG_PRINT("POLLHUP: %d\n", read_fd->revents & POLLHUP);
+            DEBUG_PRINT("POLLOUT: %d\n", write_fd->revents & POLLOUT);
+            DEBUG_PRINT("POLLERR: %d\n", write_fd->revents & POLLERR);
+            bool can_read = read_fd->fd > 0 and read_fd->revents & POLLIN;
+            bool can_write = write_fd->fd > 0 and write_fd->revents & POLLOUT;
             bool can_finish =
-                (read_fd->revents & POLLHUP and !can_read) or
-                (write_fd->revents & POLLERR);
+                (read_fd->fd > 0 and read_fd->revents & POLLHUP and !can_read) or
+                (write_fd->fd > 0 and write_fd->revents & POLLERR);
             if (!num_available[i] and can_read) {
                 DEBUG_PRINT("Child %u can write\n", i);
                 ssize_t num_read = read(read_fd->fd, buffers[i], buffer_sizes[i]);
@@ -302,6 +311,9 @@ int main(int argc, const char* argv[]) {
                 else {
                     num_available[i] = num_read;
                     offset_buffers[i] = buffers[i];
+
+                    read_fd->fd *= -1;
+                    write_fd->fd *= -1;
                 }
             }
             if (num_available[i] and can_write) {
@@ -317,9 +329,17 @@ int main(int argc, const char* argv[]) {
                 }
                 else {
                     num_available[i] -= num_written;
+
+                    if (!num_available[i]) {
+                        read_fd->fd *= -1;
+                        write_fd->fd *= -1;
+                    }
                 }
             }
+
             if (can_finish) {
+                read_fd->fd = abs(read_fd->fd);
+                write_fd->fd = abs(write_fd->fd);
                 DEBUG_PRINT("Close fds %d and %d\n", read_fd->fd, write_fd->fd);
                 close(read_fd->fd);
                 close(write_fd->fd);
