@@ -160,6 +160,27 @@ int spawnChildren(unsigned n, int file_fd, int** write_fds_ptr, int** read_fds_p
     return 0;
 }
 
+size_t bufferSize(unsigned n, unsigned i) {
+    size_t size = 3 * 3 * 3 * 3;
+    long long d = n - i;
+    if (d > 0) {
+        while (d) {
+            size *= 3;
+            d--;
+        }
+    }
+    else if (d < 0) {
+        while (d) {
+            size /= 3;
+            d++;
+        }
+    }
+    if (size > (1 << 17)) {
+        size = (1 << 17);
+    }
+    return size;
+}
+
 int allocateBuffers(unsigned n, char*** buffers_ptr, size_t** sizes_ptr, char** buffer_ptr) {
     char** buffers = calloc(n - 1, sizeof(*buffers));
     if (!buffers) {
@@ -171,7 +192,7 @@ int allocateBuffers(unsigned n, char*** buffers_ptr, size_t** sizes_ptr, char** 
     }
     size_t buffer_size = 0;
     for (unsigned i = 0; i < n - 1; i++) {
-        sizes[i] = 129;
+        sizes[i] = bufferSize(n, i);
         buffer_size += sizes[i];
     }
     char* buffer = calloc(buffer_size, sizeof(*buffer));
