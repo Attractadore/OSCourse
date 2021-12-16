@@ -75,7 +75,7 @@ int spawnChildren(unsigned n, int file_fd, int** write_fds_ptr, int** read_fds_p
         }
         if (i < n - 1) {
             if (pipe(from_child_fildes) < 0) {
-                perror("Failed from create to child pipe");
+                perror("Failed from create from child pipe");
                 return -1;
             }
             DEBUG_PRINT("Open from pipe for child %u with READ_END %d and WRITE_END %d\n",
@@ -85,7 +85,7 @@ int spawnChildren(unsigned n, int file_fd, int** write_fds_ptr, int** read_fds_p
 
         pid_t pid = fork();
         if (pid < 0) {
-            perror("Failed to creat child");
+            perror("Failed to create child");
             return -1;
         }
         if (!pid) {
