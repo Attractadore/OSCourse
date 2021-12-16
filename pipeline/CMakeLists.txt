@@ -1,0 +1,5 @@
+add_executable(pipeline "pipeline.c")
+target_compile_definitions(pipeline PRIVATE _GNU_SOURCE)
+if (DEBUG_PRINT)
+    target_compile_definitions(pipeline PRIVATE DEBUG)
+endif()
