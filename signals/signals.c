@@ -53,7 +53,7 @@ void recieve1Handler(int signum) {
 int activateChildDeathHandler() {
     struct sigaction act = {
         .sa_handler = childDeathHandler,
-        .sa_flags = SA_RESTART,
+        .sa_flags = SA_RESTART | SA_NOCLDSTOP | SA_NOCLDWAIT,
     };
     DEBUG_PRINT("Client: set exit handler for child death\n");
     sigaction(SIGCHLD, &act, NULL);
