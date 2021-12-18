@@ -3,8 +3,9 @@
 #include <limits.h>
 #include <signal.h>
 #include <stdbool.h>
-#include <stddef.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <sys/prctl.h>
 #include <unistd.h>
 
 #ifdef DEBUG 
@@ -20,6 +21,10 @@ unsigned char* active_data;
 size_t active_bit;
 
 bool server_ready;
+
+void childDeathHandler(int signum) {
+    exit(-1);
+}
 
 void recieveWaitHandler(int signum) {
     server_ready = true;
@@ -45,9 +50,20 @@ void recieve1Handler(int signum) {
     server_ready = true;
 }
 
+int activateChildDeathHandler() {
+    struct sigaction act = {
+        .sa_handler = childDeathHandler,
+        .sa_flags = SA_RESTART,
+    };
+    DEBUG_PRINT("Client: set exit handler for child death\n");
+    sigaction(SIGCHLD, &act, NULL);
+    return 0;
+}
+
 int activateRecieveWaitHandlers() {
     struct sigaction act = {
         .sa_handler = recieveWaitHandler,
+        .sa_flags = SA_RESTART,
     };
     DEBUG_PRINT("Client: set wait handler for SIGUSR1\n");
     sigaction(SIGUSR1, &act, NULL);
@@ -57,9 +73,11 @@ int activateRecieveWaitHandlers() {
 int activateRecieveHandlers() {
     struct sigaction act0 = {
         .sa_handler = recieve0Handler,
+        .sa_flags = SA_RESTART,
     };
     struct sigaction act1 = {
         .sa_handler = recieve1Handler,
+        .sa_flags = SA_RESTART,
     };
     DEBUG_PRINT("Client: set read bit handler for SIGUSR1\n");
     sigaction(SIGUSR1, &act0, NULL);
@@ -68,7 +86,6 @@ int activateRecieveHandlers() {
     return 0;
 }
 
-// TODO: handle server dying
 int waitForServer(const sigset_t* mask) {
     DEBUG_PRINT("Client: wait for server\n");
     sigset_t old_mask;
@@ -153,8 +170,7 @@ int mainRecieveLoop(pid_t cpid) {
             return -1;
         }
 
-        ssize_t num_written =
-            TEMP_FAILURE_RETRY(write(STDOUT_FILENO, buffer, buffer_size));
+        ssize_t num_written = write(STDOUT_FILENO, buffer, buffer_size);
         DEBUG_PRINT("Client: wrote %zd bytes\n", num_written);
         if (num_written < 0) {
             return -1;
@@ -173,13 +189,13 @@ void sendWaitHandler(int signum) {
 int activateSendHandlers() {
     struct sigaction act = {
         .sa_handler = sendWaitHandler,
+        .sa_flags = SA_RESTART,
     };
     DEBUG_PRINT("Server: set wait handler for SIGUSR1");
     sigaction(SIGUSR1, &act, NULL);
     return 0;
 }
 
-// TODO: handle client dying
 int waitForClient() {
     DEBUG_PRINT("Server: wait for client\n");
     sigset_t mask, old_mask;
@@ -233,8 +249,7 @@ int sendBuffer(pid_t ppid) {
 
 int mainSendLoop(pid_t ppid, int fd) {
     do {
-        ssize_t num_read =
-            TEMP_FAILURE_RETRY(read(fd, buffer, sizeof(buffer)));
+        ssize_t num_read = read(fd, buffer, sizeof(buffer));
         DEBUG_PRINT("Server: read %zd bytes\n", num_read);
         if (num_read < 0) {
             return -1;
@@ -277,6 +292,11 @@ int main(int argc, const char* argv[]) {
         perror("Failed to set signal handlers");
         return -1;
     }
+    if (activateChildDeathHandler() < 0) {
+        perror("Failed to set signal handler");
+        return -1;
+    }
+    pid_t ppid = getpid();
     pid_t cpid = fork();
     if (cpid < 0) {
         perror("Failed to fork");
@@ -288,11 +308,18 @@ int main(int argc, const char* argv[]) {
         return mainRecieveLoop(cpid);
     }
     else {
-        if (activateSendHandlers()) {
-            perror("Failed to set signal handlers");
+        if (prctl(PR_SET_PDEATHSIG, SIGTERM)) {
+            perror("Server: failed to set client death signal\n");
             return -1;
         }
-        // TODO: getppid is a race condition
-        return mainSendLoop(getppid(), fd);
+        if (getppid() != ppid) {
+            fprintf(stderr, "Server: client has already died\n");
+            return -1;
+        }
+        if (activateSendHandlers()) {
+            perror("Server: failed to set signal handlers");
+            return -1;
+        }
+        return mainSendLoop(ppid, fd);
     }
 }
