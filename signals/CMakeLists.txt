@@ -1,0 +1,5 @@
+add_executable(signals "signals.c")
+target_compile_definitions(signals PRIVATE _GNU_SOURCE)
+if (DEBUG_PRINT)
+    target_compile_definitions(signals PRIVATE DEBUG)
+endif()
