@@ -170,10 +170,14 @@ int mainRecieveLoop(pid_t cpid) {
             return -1;
         }
 
-        ssize_t num_written = write(STDOUT_FILENO, buffer, buffer_size);
-        DEBUG_PRINT("Client: wrote %zd bytes\n", num_written);
-        if (num_written < 0) {
-            return -1;
+        size_t total_written = 0;
+        while(total_written < buffer_size) {
+            ssize_t num_written = write(STDOUT_FILENO, buffer + total_written, buffer_size - total_written);
+            DEBUG_PRINT("Client: wrote %zd bytes\n", num_written);
+            if (num_written < 0) {
+                return -1;
+            }
+            total_written += num_written;
         }
     } while (buffer_size);
 
@@ -191,7 +195,7 @@ int activateSendHandlers() {
         .sa_handler = sendWaitHandler,
         .sa_flags = SA_RESTART,
     };
-    DEBUG_PRINT("Server: set wait handler for SIGUSR1");
+    DEBUG_PRINT("Server: set wait handler for SIGUSR1\n");
     sigaction(SIGUSR1, &act, NULL);
     return 0;
 }
