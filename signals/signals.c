@@ -27,7 +27,7 @@ int fd;
 pid_t ppid;
 
 void childDeathHandler(int signum) {
-    exit(-1);
+    exit(0);
 }
 
 bool server_done;
