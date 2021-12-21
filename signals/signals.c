@@ -134,8 +134,7 @@ int waitForServerSend() {
 
 int recieveN(pid_t cpid, size_t n_bits) {
     DEBUG_PRINT("Client: recieve %zu bits\n", n_bits);
-    size_t end = active_bit + n_bits;
-    while (active_bit < end) {
+    for (size_t i = 0; i < n_bits; i++) {
         if (kill(cpid, SIGUSR1)) {
             return -1;
         }
@@ -194,7 +193,7 @@ int main(int argc, const char* argv[]) {
     const char* file_name = argv[1];
     fd = open(file_name, O_RDONLY);
     if (fd < 0) {
-        perror("Failed to open send file");
+        perror("Server: failed to open send file");
         return -1;
     }
 
