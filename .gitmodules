@@ -1,0 +1,3 @@
+[submodule "linkedlist/test/googletest"]
+	path = linkedlist/test/googletest
+	url = https://github.com/google/googletest

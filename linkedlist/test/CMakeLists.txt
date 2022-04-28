@@ -1,0 +1,10 @@
+add_subdirectory(googletest)
+include(GoogleTest)
+
+add_executable(TestLinkedList TestLinkedList.cpp)
+target_link_libraries(TestLinkedList LinkedList gtest_main)
+gtest_discover_tests(TestLinkedList)
+
+add_executable(TestLinkedListAllocators TestLinkedListAllocators.cpp)
+target_link_libraries(TestLinkedListAllocators LinkedList gtest_main)
+gtest_discover_tests(TestLinkedListAllocators)
