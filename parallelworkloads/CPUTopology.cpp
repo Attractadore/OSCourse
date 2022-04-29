@@ -2,17 +2,19 @@
 
 #include <thread>
 #include <fstream>
-#include <filesystem>
 #include <sstream>
 
 std::string readThreadSiblingsList(cpu_id_t cpu_id) {
     auto sbuf = "/sys/devices/system/cpu/cpu" +
                 std::to_string(cpu_id) +
                 "/topology/thread_siblings_list";
-    std::ifstream f(sbuf);
-    auto sz = std::filesystem::file_size(sbuf);
+    std::ifstream f(sbuf, std::ios::binary);
+    constexpr auto rsz = 4096 - 1;
+    sbuf.resize(rsz);
+    f.read(sbuf.data(), rsz);
+    auto sz = f.gcount();
+    assert(sz < rsz);
     sbuf.resize(sz);
-    f.read(sbuf.data(), sz);
     std::replace(sbuf.begin(), sbuf.end(), ',', ' ');
     return sbuf;
 }

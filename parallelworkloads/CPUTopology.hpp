@@ -12,38 +12,31 @@ struct CPU {
 };
 
 class CPUTopology {
-    std::vector<unsigned> m_cpus; 
+    std::vector<CPU> m_cpus;
     size_t m_id = 0;
 
 public:
     template<typename I>
     CPUTopology(I first, I last);
 
-    cpu_id_t selectCPU();
+    const CPU& selectCPU();
     size_t getCPUCount() const;
 };
 
 template<typename I>
 CPUTopology::CPUTopology(I first, I last) {
-    std::vector<CPU> cpus(first, last);   
     auto cpu_is_main = [](const CPU& cpu) {
         assert(cpu.id == cpu.siblings.first or cpu.id == cpu.siblings.second);
         return cpu.id == cpu.siblings.first;
     };
-    auto cpu_comp = [&](const CPU& l, const CPU& r) {
-        int l_is_main = cpu_is_main(l);
-        int r_is_main = cpu_is_main(r);
-        return (l_is_main != r_is_main)? l_is_main > r_is_main: l.id < r.id;
-    };
-    std::sort(cpus.begin(), cpus.end(), cpu_comp);
-    m_cpus.resize(cpus.size());
-    std::transform(cpus.begin(), cpus.end(), m_cpus.begin(), [](const CPU& cpu) { return cpu.id; });
+    m_cpus.reserve(128);
+    std::copy_if(first, last, std::back_inserter(m_cpus), cpu_is_main);
 }
 
-inline cpu_id_t CPUTopology::selectCPU() {
-    auto id = m_cpus[m_id];
+inline const CPU& CPUTopology::selectCPU() {
+    const auto& cpu = m_cpus[m_id];
     m_id = (m_id + 1) % m_cpus.size();
-    return id;
+    return cpu;
 }
 
 inline size_t CPUTopology::getCPUCount() const {

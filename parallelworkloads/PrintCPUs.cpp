@@ -5,6 +5,8 @@
 int main() {
     auto topology = getSysCPUTopology();
     for (size_t i = 0; i < topology.getCPUCount(); i++) {
-        std::cout << topology.selectCPU() << "\n";
+        const auto& cpu = topology.selectCPU();
+        std::cout << "CPU " << cpu.id << "\n";
+        std::cout << "Siblings " << cpu.siblings.first << ", " << cpu.siblings.second << "\n";
     }
 }
