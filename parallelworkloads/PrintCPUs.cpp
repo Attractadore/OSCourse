@@ -4,9 +4,20 @@
 
 int main() {
     auto topology = getSysCPUTopology();
-    for (size_t i = 0; i < topology.getCPUCount(); i++) {
-        const auto& cpu = topology.selectCPU();
-        std::cout << "CPU " << cpu.id << "\n";
-        std::cout << "Siblings " << cpu.siblings.first << ", " << cpu.siblings.second << "\n";
+
+    auto num_cpus = topology.getCPUCount();
+    if (num_cpus) {
+        std::cout << num_cpus << " CPUs\n";
+    }
+    for (auto i = topology.begin(), e = topology.end(); i != e; ++i) {
+        std::cout << i->id << "\n";
+    }
+
+    auto num_smtcpus = topology.getSMTCPUCount();
+    if (num_smtcpus) {
+        std::cout << num_smtcpus << " SMT CPUs\n";
+    }
+    for (auto i = topology.smtbegin(), e = topology.smtend(); i != e; ++i) {
+        std::cout << i->id << ", " << i->sibling << "\n";
     }
 }

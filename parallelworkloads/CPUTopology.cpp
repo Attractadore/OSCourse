@@ -4,6 +4,9 @@
 #include <fstream>
 #include <sstream>
 
+namespace {
+using sibligs_list_t = std::pair<cpu_id_t, cpu_id_t>;
+
 std::string readThreadSiblingsList(cpu_id_t cpu_id) {
     auto sbuf = "/sys/devices/system/cpu/cpu" +
                 std::to_string(cpu_id) +
@@ -19,26 +22,112 @@ std::string readThreadSiblingsList(cpu_id_t cpu_id) {
     return sbuf;
 }
 
-std::pair<cpu_id_t, cpu_id_t> parseCPUSiblings(std::string s) {
+sibligs_list_t parseCPUSiblings(std::string s) {
     std::stringstream ss(std::move(s));
-    std::pair<cpu_id_t, cpu_id_t> siblings;
+    sibligs_list_t siblings;
     ss >> siblings.first;
-    siblings.second = siblings.second;
+    siblings.second = siblings.first;
     ss >> siblings.second;
     return siblings;
 }
 
-std::vector<CPU> getSysCPUs() {
-    std::vector<CPU> cpus(std::thread::hardware_concurrency());
-    for (size_t i = 0; i < cpus.size(); i++) {
-        auto tsl_contents = readThreadSiblingsList(i);
-        cpus[i].id = i;
-        cpus[i].siblings = parseCPUSiblings(std::move(tsl_contents));
+std::tuple<
+    std::vector<CPU>, std::vector<SMTCPU>
+> getSysCPUs() {
+    std::vector<CPU> cpus;
+    std::vector<SMTCPU> smtcpus;
+    auto num_cpus = std::thread::hardware_concurrency();
+    auto is_smt = [](const sibligs_list_t& sl) { return sl.first != sl.second; };
+    auto is_main = [](cpu_id_t id, const sibligs_list_t& sl) { return id == sl.first; };
+    auto get_sibling = [](cpu_id_t, const sibligs_list_t& sl) { return sl.second; };
+    for (cpu_id_t id = 0; id < num_cpus; id++) {
+        auto tsl_contents = readThreadSiblingsList(id);
+        auto sl = parseCPUSiblings(std::move(tsl_contents));
+        if (is_smt(sl)) {
+            if (is_main(id, sl)) {
+                SMTCPU cpu = {
+                    .id = id,
+                    .sibling = get_sibling(id, sl),
+                };
+                smtcpus.emplace_back(cpu);
+            }
+        }
+        else {
+            CPU cpu = {
+                .id = id,
+            };
+            cpus.emplace_back(cpu);
+        }
     }
-    return cpus;
+    return {std::move(cpus), std::move(smtcpus)};
+}
 }
 
 CPUTopology getSysCPUTopology() {
-    auto cpus = getSysCPUs();
-    return CPUTopology(cpus.begin(), cpus.end());
+    auto [cpus, smtcpus] = getSysCPUs();
+    return CPUTopology(cpus.begin(), cpus.end(), smtcpus.begin(), smtcpus.end());
+}
+
+// Schedule all work to smt cores, then non smt cores, then hyperthreads
+std::vector<work_dist_t> distributeWork(
+    const CPUTopology& topology, size_t work, size_t launch_threads
+) {
+    constexpr auto hthread_weight = 0.5;
+
+    std::vector<work_dist_t> dist;
+    dist.reserve(launch_threads);
+
+    auto smt_count = topology.getSMTCPUCount();
+    auto core_count = topology.getCPUCount();
+    auto thread_count = topology.getThreadCount();
+
+    auto distribute = [&](auto num_threads) {
+        auto smtcores = std::min(num_threads, smt_count);
+        num_threads -= smtcores;
+        auto cores = std::min(num_threads, core_count);
+        num_threads -= cores;
+        auto hthreads = num_threads;
+        return std::tuple{smtcores, cores, hthreads};
+    };
+
+    auto hw_threads = std::min(launch_threads, thread_count);
+    auto [active_smtcores, active_cores, active_hthreads] = distribute(hw_threads);
+    auto total_weight = (active_smtcores + active_cores) + hthread_weight * active_hthreads;
+
+    auto base_threads = launch_threads / thread_count;
+    auto leftover_threads = launch_threads % thread_count;
+    auto [leftover_smtcores, leftover_cores, leftover_hthreads] = distribute(leftover_threads);
+
+    for (size_t i = 0; i < smt_count; i++) {
+        auto local_weight = 1 + hthread_weight * (i < active_hthreads);
+        auto local_work = (local_weight / total_weight) * work;
+        auto local_threads = base_threads + (i < leftover_smtcores) + (i < leftover_hthreads);
+        if (local_threads == 0) break;
+        auto local_thread_work = local_work / local_threads;
+        const auto& cpu = topology.getSMTCPU(i);
+        work_dist_t d = {
+            {cpu.id, cpu.sibling},
+            local_thread_work
+        };
+        for (size_t k = 0; k < local_threads; k++) {
+            dist.push_back(d);
+        }
+    }
+
+    for (size_t i = 0; i < core_count; i++) {
+        auto local_work = work / total_weight;
+        auto local_threads = base_threads + (i < leftover_cores);
+        if (local_threads == 0) break;
+        auto local_thread_work = local_work / local_threads;
+        const auto& cpu = topology.getCPU(i);
+        work_dist_t d = {
+            {cpu.id, cpu.id},
+            local_thread_work
+        };
+        for (size_t k = 0; k < local_threads; k++) {
+            dist.push_back(d);
+        }
+    }
+
+    return dist;
 }

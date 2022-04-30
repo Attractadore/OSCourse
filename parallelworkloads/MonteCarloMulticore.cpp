@@ -26,44 +26,59 @@ float launchMonteCarlo(size_t n) {
 }
 
 float scheduleMonteCarlo(size_t n, size_t n_threads) {
-    auto thread_n = n / n_threads;
-    std::cout << "Thread work: " << thread_n << "\n";
-    std::cout << "Total work: " << thread_n * n_threads << "\n";
-
     auto topology = getSysCPUTopology();
-    std::cout << topology.getCPUCount() << " CPUs\n";
+    if (auto cpu_count = topology.getCPUCount(); cpu_count) {
+        std::cout << cpu_count << " CPUs\n";
+    }
+    if (auto smtcpu_count = topology.getSMTCPUCount(); smtcpu_count) {
+        std::cout << smtcpu_count << " SMT CPUs\n";
+    }
 
-    for (size_t i = 0; i < topology.getCPUCount(); i++) {
-        const auto& cpu = topology.selectCPU();
+    auto warm_up = [] (const cpu_set_t& msk) {
+        pthread_setaffinity_np(pthread_self(), sizeof(msk), &msk);
+        launchMonteCarlo(1);
+    };
 
-        auto [first, second] = cpu.siblings;
-
+    for (auto i = topology.begin(), e = topology.end(); i != e; ++i) {
+        auto id = i->id;
         auto t = std::thread([=] {
             cpu_set_t msk;
             CPU_ZERO(&msk);
-            CPU_SET(first, &msk);
-            CPU_SET(second, &msk);
-            pthread_setaffinity_np(pthread_self(), sizeof(msk), &msk);
-            launchMonteCarlo(1);
+            CPU_SET(id, &msk);
+            warm_up(msk);
+        });
+        t.detach();
+    }
+    for (auto i = topology.smtbegin(), e = topology.smtend(); i != e; ++i) {
+        auto id = i->id;
+        auto sid = i->sibling;
+        auto t = std::thread([=] {
+            cpu_set_t msk;
+            CPU_ZERO(&msk);
+            CPU_SET(id, &msk);
+            CPU_SET(sid, &msk);
+            warm_up(msk);
         });
         t.detach();
     }
 
     constexpr auto step = 1024;
     std::vector<float> results(n_threads * step);
-    std::vector<std::thread> threads(n_threads);
-    for (size_t i = 0; i < n_threads; i++) {
-        auto& t = threads[i];
+    auto dist = distributeWork(topology, n, n_threads);
+    std::vector<std::thread> threads(dist.size());
+    for (size_t i = 0; i < threads.size(); i++) {
+        auto [ids, thread_n] = dist[i];
         auto out = &results[i * step];
+
+        auto& t = threads[i];
         t = std::thread([=] {
             *out = launchMonteCarlo(thread_n);
         });
 
-        const auto& cpu = topology.selectCPU();
         cpu_set_t msk;
         CPU_ZERO(&msk);
-        CPU_SET(cpu.siblings.first, &msk);
-        CPU_SET(cpu.siblings.second, &msk);
+        CPU_SET(ids.first, &msk);
+        CPU_SET(ids.second, &msk);
         pthread_setaffinity_np(t.native_handle(), sizeof(msk), &msk);
     }
 

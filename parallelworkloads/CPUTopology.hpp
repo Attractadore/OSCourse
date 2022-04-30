@@ -8,40 +8,64 @@ using cpu_id_t = unsigned;
 
 struct CPU {
     cpu_id_t id;
-    std::pair<cpu_id_t, cpu_id_t> siblings;
+};
+
+struct SMTCPU {
+    cpu_id_t id;
+    cpu_id_t sibling;
 };
 
 class CPUTopology {
     std::vector<CPU> m_cpus;
-    size_t m_id = 0;
+    std::vector<SMTCPU> m_smtcpus;
 
 public:
-    template<typename I>
-    CPUTopology(I first, I last);
+    template<typename I, typename SMTI>
+    CPUTopology(I first, I last, SMTI smtfirst, SMTI smtlast):
+        m_cpus(first, last),
+        m_smtcpus(smtfirst, smtlast) {}
 
-    const CPU& selectCPU();
-    size_t getCPUCount() const;
+    auto getCPUCount() const {
+        return m_cpus.size();
+    }
+
+    const auto& getCPU(size_t i) const {
+        return m_cpus[i];
+    }
+
+    auto begin() const {
+        return m_cpus.begin();
+    }
+
+    auto end() const {
+        return m_cpus.end();
+    }
+
+    auto getSMTCPUCount() const {
+        return m_smtcpus.size();
+    }
+
+    const auto& getSMTCPU(size_t i) const {
+        return m_smtcpus[i];
+    }
+
+    auto smtbegin() const {
+        return m_smtcpus.begin();
+    }
+
+    auto smtend() const {
+        return m_smtcpus.end();
+    }
+
+    auto getThreadCount() const {
+        return getCPUCount() + 2 * getSMTCPUCount();
+    }
 };
 
-template<typename I>
-CPUTopology::CPUTopology(I first, I last) {
-    auto cpu_is_main = [](const CPU& cpu) {
-        assert(cpu.id == cpu.siblings.first or cpu.id == cpu.siblings.second);
-        return cpu.id == cpu.siblings.first;
-    };
-    m_cpus.reserve(128);
-    std::copy_if(first, last, std::back_inserter(m_cpus), cpu_is_main);
-}
-
-inline const CPU& CPUTopology::selectCPU() {
-    const auto& cpu = m_cpus[m_id];
-    m_id = (m_id + 1) % m_cpus.size();
-    return cpu;
-}
-
-inline size_t CPUTopology::getCPUCount() const {
-    return m_cpus.size();
-}
-
-std::vector<CPU> getSysCPUs();
 CPUTopology getSysCPUTopology();
+
+using work_dist_t = std::pair<std::pair<cpu_id_t, cpu_id_t>, size_t>;
+
+std::vector<work_dist_t> distributeWork(
+    const CPUTopology& topology, size_t num_work_items, size_t num_threads
+);
