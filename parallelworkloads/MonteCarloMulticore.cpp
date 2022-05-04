@@ -27,11 +27,11 @@ float launchMonteCarlo(size_t n) {
 
 float scheduleMonteCarlo(size_t n, size_t n_threads) {
     auto topology = getSysCPUTopology();
-    if (auto cpu_count = topology.getCPUCount(); cpu_count) {
-        std::cout << cpu_count << " CPUs\n";
-    }
     if (auto smtcpu_count = topology.getSMTCPUCount(); smtcpu_count) {
         std::cout << smtcpu_count << " SMT CPUs\n";
+    }
+    if (auto cpu_count = topology.getCPUCount(); cpu_count) {
+        std::cout << cpu_count << " CPUs\n";
     }
 
     auto warm_up = [] (const cpu_set_t& msk) {
@@ -70,16 +70,14 @@ float scheduleMonteCarlo(size_t n, size_t n_threads) {
         auto [ids, thread_n] = dist[i];
         auto out = &results[i * step];
 
-        auto& t = threads[i];
-        t = std::thread([=] {
+        threads[i] = std::thread([=] {
+            cpu_set_t msk;
+            CPU_ZERO(&msk);
+            CPU_SET(ids.first, &msk);
+            CPU_SET(ids.second, &msk);
+            pthread_setaffinity_np(pthread_self(), sizeof(msk), &msk);
             *out = launchMonteCarlo(thread_n);
         });
-
-        cpu_set_t msk;
-        CPU_ZERO(&msk);
-        CPU_SET(ids.first, &msk);
-        CPU_SET(ids.second, &msk);
-        pthread_setaffinity_np(t.native_handle(), sizeof(msk), &msk);
     }
 
     for (auto& t: threads) {

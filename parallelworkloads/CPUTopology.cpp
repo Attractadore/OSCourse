@@ -72,7 +72,7 @@ CPUTopology getSysCPUTopology() {
 std::vector<work_dist_t> distributeWork(
     const CPUTopology& topology, size_t work, size_t launch_threads
 ) {
-    constexpr auto hthread_weight = 0.5;
+    constexpr auto hthread_weight = 0.3;
 
     std::vector<work_dist_t> dist;
     dist.reserve(launch_threads);
@@ -101,7 +101,7 @@ std::vector<work_dist_t> distributeWork(
     for (size_t i = 0; i < smt_count; i++) {
         auto local_weight = 1 + hthread_weight * (i < active_hthreads);
         auto local_work = (local_weight / total_weight) * work;
-        auto local_threads = base_threads + (i < leftover_smtcores) + (i < leftover_hthreads);
+        auto local_threads = 2 * base_threads + (i < leftover_smtcores) + (i < leftover_hthreads);
         if (local_threads == 0) break;
         auto local_thread_work = local_work / local_threads;
         const auto& cpu = topology.getSMTCPU(i);
