@@ -50,11 +50,19 @@ int main(int argc, char* argv[]) {
     argc--;
     argv++;
 
-    size_t n_threads = 0;
-    std::stringstream ss(argv[0]);
-    ss >> n_threads;
+    auto n_threads = [&] {
+        size_t n_threads = 0;
+        std::stringstream ss(argv[0]);
+        ss >> n_threads;
+        return n_threads;
+    } ();
 
-    constexpr auto l = 0.0f, r = 1'000'000.0f;
-    constexpr auto n = 1'000'000'00;
+    size_t n = 5'000'000'000;
+    if (argv[1]) {
+        std::stringstream ss(argv[1]);
+        ss >> n;
+    }
+
+    constexpr auto l = 0.0f, r = 1000000.0f;
     std::cout << scheduleIntegrate(l, r, n, n_threads) << "\n";
 }
