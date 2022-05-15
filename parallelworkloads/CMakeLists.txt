@@ -4,6 +4,9 @@ project(ParallelWorkloads)
 add_library(MonteCarloIntegrator
     INTERFACE MonteCarloIntegrator.hpp
 )
+add_library(TrapezoidIntegrator
+    INTERFACE TrapezoidIntegrator.hpp
+)
 
 add_library(CPUTopology 
     CPUTopology.hpp
@@ -26,5 +29,16 @@ target_link_libraries(MonteCarloMulticore
     CPUTopology
 )
 target_compile_features(MonteCarloMulticore
+    PRIVATE cxx_std_17
+)
+
+add_executable(TrapezoidMulticore
+    TrapezoidMulticore.cpp
+)
+target_link_libraries(TrapezoidMulticore
+    TrapezoidIntegrator
+    CPUTopology
+)
+target_compile_features(TrapezoidMulticore
     PRIVATE cxx_std_17
 )
