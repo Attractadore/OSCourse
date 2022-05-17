@@ -32,13 +32,21 @@ target_compile_features(MonteCarloMulticore
     PRIVATE cxx_std_17
 )
 
+add_library(ScheduleTrapezoid
+    ScheduleTrapezoid.cpp
+)
+target_link_libraries(ScheduleTrapezoid
+    PUBLIC  CPUTopology
+    PRIVATE TrapezoidIntegrator
+)
+target_compile_features(ScheduleTrapezoid
+    PRIVATE cxx_std_17
+)
+
 add_executable(TrapezoidMulticore
     TrapezoidMulticore.cpp
 )
 target_link_libraries(TrapezoidMulticore
-    TrapezoidIntegrator
+    ScheduleTrapezoid
     CPUTopology
-)
-target_compile_features(TrapezoidMulticore
-    PRIVATE cxx_std_17
 )
