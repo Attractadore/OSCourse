@@ -34,5 +34,4 @@ add_executable(TrapezoidMulticore
 )
 target_link_libraries(TrapezoidMulticore
     ScheduleTrapezoid
-    CPUTopology
 )
