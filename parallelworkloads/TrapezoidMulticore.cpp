@@ -21,5 +21,10 @@ int main(int argc, char* argv[]) {
     }
 
     constexpr auto l = 0.0f, r = 1000000.0f;
-    std::cout << scheduleIntegrate(l, r, n, n_threads) << "\n";
+    try {
+        std::cout << scheduleIntegrate(l, r, n, n_threads) << "\n";
+    } catch (std::system_error& e) {
+        std::cerr << "Too many threads requested\n";
+        return -1;
+    }
 }

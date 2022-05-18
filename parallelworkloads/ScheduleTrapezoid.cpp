@@ -18,22 +18,36 @@ float scheduleIntegrate(
     auto dist = distributeWork(topology, n, n_threads);
     std::vector<std::thread> threads(dist.size());
 
+    auto thread_cnt = topology.getThreadCount();
+
+    try {
     for (size_t i = 0, current_n = 0; i < threads.size(); i++) {
         auto [ids, thread_n] = dist[i];
         auto out = &results[i * step];
 
         threads[i] = std::thread([=] {
-            cpu_set_t msk;
-            CPU_ZERO(&msk);
-            CPU_SET(ids.first, &msk);
-            CPU_SET(ids.second, &msk);
-            pthread_setaffinity_np(pthread_self(), sizeof(msk), &msk);
+            if (n <= thread_cnt * 10) {
+                cpu_set_t msk;
+                CPU_ZERO(&msk);
+                CPU_SET(ids.first, &msk);
+                CPU_SET(ids.second, &msk);
+                pthread_setaffinity_np(pthread_self(), sizeof(msk), &msk);
+            }
             float a = l + (r - l) * current_n / n;
             float b = a + (r - l) * thread_n / n;
             *out = launchIntegrate(a, b, thread_n);
         });
 
         current_n += thread_n;
+    }
+    } catch (std::system_error& e) {
+        for (auto& t: threads) {
+            if (pthread_t pt = t.native_handle()) {
+                t.detach();
+                pthread_cancel(pt);
+            }
+        }
+        throw e;
     }
 
     float s = 0.0f;
