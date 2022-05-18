@@ -2,14 +2,14 @@ cmake_minimum_required(VERSION 3.8)
 if (NOT CMAKE_BUILD_TYPE)
     set(CMAKE_BUILD_TYPE "Release")
 endif()
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_C_STANDARD 99)
+
 project(ParallelWorkloads)
 
 add_library(CPUTopology 
     CPUTopology.hpp
     CPUTopology.cpp
-)
-target_compile_features(CPUTopology
-    PRIVATE cxx_std_17
 )
 
 add_executable(PrintCPUs
@@ -27,9 +27,6 @@ add_library(ScheduleTrapezoid
 target_link_libraries(ScheduleTrapezoid
     PUBLIC  CPUTopology
     PRIVATE TrapezoidIntegrator
-)
-target_compile_features(ScheduleTrapezoid
-    PRIVATE cxx_std_17
 )
 
 add_executable(TrapezoidMulticore
