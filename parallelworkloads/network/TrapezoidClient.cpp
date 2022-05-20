@@ -8,7 +8,7 @@ int main(int argc, char* argv[]) {
     argv++;
 
     constexpr auto l = 0.0f, r = 1000000.0f;
-    size_t n = 5'000'000'000;
+    size_t n = 5ull * 1000 * 1000 * 1000;
     if (argv[0]) {
         std::stringstream ss(argv[0]);
         ss >> n;

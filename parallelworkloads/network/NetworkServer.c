@@ -1,4 +1,4 @@
-#include "NetworkCommon.c"
+#define _GNU_SOURCE
 #include "NetworkServer.h"
 
 #include <netdb.h>

@@ -25,16 +25,33 @@ void StartDiscoveryService(const DiscoveryInfo& dinfo) {
     }).detach();
 }
 
-std::optional<IntegrationResponse> GenerateIntegrationResponse(
+struct IntegrationResponseGen {
+    IntegrationResponse iresp;
+    bool valid = false;
+
+    explicit operator bool() const {
+        return valid;
+    }
+
+    IntegrationResponse& operator*() {
+        return iresp;
+    }
+};
+
+IntegrationResponseGen GenerateIntegrationResponse(
     const IntegrationRequest& ireq, size_t n_threads, const CPUTopology& topology
 ) {
-    auto [l, r, n] = ireq;
+    float l = ireq.l;
+    float r = ireq.r;
+    size_t n = ireq.n;
+    IntegrationResponseGen ret;
     try {
         float ival =  scheduleIntegrate(l, r, n, n_threads, topology);
-        return IntegrationResponse{ival};
+        ret.valid = true;
+        ret.iresp.ival = ival;
     } catch (std::system_error& e) {
-        return std::nullopt;
     }
+    return ret;
 }
 
 int ServerLoop(const ListenInfo& linfo, const DiscoveryInfo& dinfo, size_t n_threads) {
