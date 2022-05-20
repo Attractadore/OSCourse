@@ -202,7 +202,7 @@ static int GetResponses(Socket* connections, size_t con_cnt,
         }
 
         GetResponsesImpl(con_cnt, thread_ids, thread_datas);
-        for (size_t i = 0; i < con_cnt and !r; i++) {
+        for (size_t i = 0; i < con_cnt and !ret; i++) {
             ret = thread_datas[i].r;
         }
 
