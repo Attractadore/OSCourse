@@ -37,3 +37,33 @@ add_executable(TrapezoidMulticore
 target_link_libraries(TrapezoidMulticore
     ScheduleTrapezoid
 )
+
+add_library(NetworkClient
+    NetworkClient.c NetworkCommon.c
+)
+target_compile_definitions(NetworkClient
+    PUBLIC NETDEBUG=1
+)
+
+add_executable(TrapezoidClient
+    TrapezoidClient.cpp
+)
+target_link_libraries(TrapezoidClient
+    ScheduleTrapezoid
+    NetworkClient
+)
+
+add_library(NetworkServer
+    NetworkServer.c NetworkCommon.c
+)
+target_compile_definitions(NetworkServer
+    PUBLIC NETDEBUG=1
+)
+
+add_executable(TrapezoidServer
+    TrapezoidServer.cpp
+)
+target_link_libraries(TrapezoidServer
+    ScheduleTrapezoid
+    NetworkServer
+)
