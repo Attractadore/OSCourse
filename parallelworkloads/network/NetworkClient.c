@@ -44,7 +44,7 @@ static int GetWorkersForSocket(
         CLIENT_PEER_DISCOVERY_TIMEOUT_S * 1e9;
     long long timeout_ns = total_timeout_ns;
 
-    struct timespec start;
+    struct timespec start, end;
     if (clock_gettime(CLOCK_REALTIME, &start)) {
         NetDebugPrint("Failed to set discovery start time\n");
         return -1;
@@ -89,7 +89,6 @@ static int GetWorkersForSocket(
         pinfo->worker_count++;
 
 cont:
-        struct timespec end;
         if (clock_gettime(CLOCK_REALTIME, &end)) {
             NetDebugPrint("Failed to get current time\n");
             return -1;
