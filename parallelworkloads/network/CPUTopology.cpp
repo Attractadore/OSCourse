@@ -59,7 +59,7 @@ std::tuple<
             cpus.emplace_back(cpu);
         }
     }
-    return {std::move(cpus), std::move(smtcpus)};
+    return std::tuple<decltype(cpus), decltype(smtcpus)>{std::move(cpus), std::move(smtcpus)};
 }
 }
 

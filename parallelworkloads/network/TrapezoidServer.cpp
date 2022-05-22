@@ -2,8 +2,8 @@
 #include "NetworkServer.h"
 
 #include <iostream>
-#include <optional>
 #include <sstream>
+#include <system_error>
 #include <thread>
 
 namespace {
@@ -49,8 +49,7 @@ IntegrationResponseGen GenerateIntegrationResponse(
         float ival =  scheduleIntegrate(l, r, n, n_threads, topology);
         ret.valid = true;
         ret.iresp.ival = ival;
-    } catch (std::system_error& e) {
-    }
+    } catch (const std::system_error& e) {}
     return ret;
 }
 

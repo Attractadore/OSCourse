@@ -2,6 +2,7 @@
 
 #include <cmath>
 #include <thread>
+#include <system_error>
 
 float launchIntegrate(float a, float b, size_t n) {
     auto f = [](float x) { return std::exp(-x*x/2.0f); };
@@ -22,7 +23,9 @@ float scheduleIntegrate(
 
     try {
     for (size_t i = 0, current_n = 0; i < threads.size(); i++) {
-        auto [ids, thread_n] = dist[i];
+        auto ids = std::get<0>(dist[i]);
+        auto thread_n = std::get<1>(dist[i]);
+
         auto out = &results[i * step];
 
         threads[i] = std::thread([=] {
@@ -40,7 +43,7 @@ float scheduleIntegrate(
 
         current_n += thread_n;
     }
-    } catch (std::system_error& e) {
+    } catch (const std::system_error& e) {
         for (auto& t: threads) {
             if (pthread_t pt = t.native_handle()) {
                 t.detach();

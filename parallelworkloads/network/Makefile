@@ -1,8 +1,8 @@
 CFLAGS = -std=c99 -DNETDEBUG -O3
 CXXFLAGS = -std=c++11 -DNETDEBUG -O3
 LIBS = -lpthread
-CC = gcc
-CXX = g++
+CC = cc
+CXX = c++
 
 all: TrapezoidClient TrapezoidServer
 
@@ -19,8 +19,8 @@ NetworkServer.o: NetworkServer.c
 	$(CC) $(CFLAGS) -c NetworkServer.c $(LIBS)
 
 TrapezoidServer: NetworkServer.o NetworkCommon.o
-	$(CXX) $(CPPFLAGS) NetworkServer.o NetworkCommon.o CPUTopology.cpp ScheduleTrapezoid.cpp TrapezoidServer.cpp -o TrapezoidServer $(LIBS)
+	$(CXX) $(CXXFLAGS) NetworkServer.o NetworkCommon.o CPUTopology.cpp ScheduleTrapezoid.cpp TrapezoidServer.cpp -o TrapezoidServer $(LIBS)
 
 TrapezoidClient: NetworkClient.o NetworkCommon.o
-	$(CXX) $(CPPFLAGS) NetworkClient.o NetworkCommon.o CPUTopology.cpp ScheduleTrapezoid.cpp TrapezoidClient.cpp -o TrapezoidClient $(LIBS)
+	$(CXX) $(CXXFLAGS) NetworkClient.o NetworkCommon.o CPUTopology.cpp ScheduleTrapezoid.cpp TrapezoidClient.cpp -o TrapezoidClient $(LIBS)
 
