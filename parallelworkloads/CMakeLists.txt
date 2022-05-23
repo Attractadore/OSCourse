@@ -4,8 +4,6 @@ if (NOT CMAKE_BUILD_TYPE)
 endif()
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED TRUE)
-set(CMAKE_C_STANDARD 99)
-set(CMAKE_C_STANDARD_REQUIRED TRUE)
 
 project(ParallelWorkloads)
 
@@ -36,34 +34,4 @@ add_executable(TrapezoidMulticore
 )
 target_link_libraries(TrapezoidMulticore
     ScheduleTrapezoid
-)
-
-add_library(NetworkClient
-    NetworkClient.c NetworkCommon.c
-)
-target_compile_definitions(NetworkClient
-    PUBLIC NETDEBUG=1
-)
-
-add_executable(TrapezoidClient
-    TrapezoidClient.cpp
-)
-target_link_libraries(TrapezoidClient
-    ScheduleTrapezoid
-    NetworkClient
-)
-
-add_library(NetworkServer
-    NetworkServer.c NetworkCommon.c
-)
-target_compile_definitions(NetworkServer
-    PUBLIC NETDEBUG=1
-)
-
-add_executable(TrapezoidServer
-    TrapezoidServer.cpp
-)
-target_link_libraries(TrapezoidServer
-    ScheduleTrapezoid
-    NetworkServer
 )
