@@ -1,8 +1,8 @@
 CFLAGS = -std=c99 -DNETDEBUG -O3
 CXXFLAGS = -std=c++11 -DNETDEBUG -O3
 LIBS = -lpthread
-CC = cc
-CXX = c++
+CC = gcc
+CXX = g++
 
 all: TrapezoidClient TrapezoidServer
 
