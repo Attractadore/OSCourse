@@ -9,14 +9,20 @@
 namespace {
 double RunBenchmark(size_t n_threads, const CPUTopology& topology) {
     NetDebugPrint("Start throughput benchmark\n");
-    auto t0 = std::chrono::steady_clock::now();
-    constexpr float l = 0.0f;
-    constexpr auto n = 100 * 1000 * 1000;
-    constexpr float r = l + n;
-    scheduleIntegrate(l, r, n, n_threads, topology);
-    auto t1 = std::chrono::steady_clock::now();
+    size_t n = 100 * 1000 * 1000;
+    double t, d;
+    do {
+        auto t0 = std::chrono::steady_clock::now();
+        float l = 0.0f;
+        float r = (l + n) / 1000.0f;
+        scheduleIntegrate(l, r, n, n_threads, topology);
+        auto t1 = std::chrono::steady_clock::now();
+        d = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count() / 1e9;
+        t = n / d;
+        n *= 2;
+    } while(d < 1.0);
     NetDebugPrint("Finished throughput benchmark\n");
-    return n * 1e9 / std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+    return t;
 }
 
 void StartDiscoveryService(const DiscoveryInfo& dinfo) {
