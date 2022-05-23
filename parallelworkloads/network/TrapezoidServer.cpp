@@ -122,6 +122,7 @@ int main(int argc, char* argv[]) {
         std::cerr << "FATAL: Failed to start discovery service on port " << DISCOVER_PORT << "\n";
         return -1;
     }
+    dinfo.response.thread_count = n_threads;
     ServerLoop(linfo, dinfo, n_threads);
     return 0;
 }

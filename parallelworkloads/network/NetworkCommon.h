@@ -9,23 +9,51 @@ extern "C" {
 #define CALCULATE_PORT      "5162"
 #define CALCULATE_PORT_V    5162
 
+typedef int magic_t;
+enum { MAGIC_V = 0x1DEAD1 };
+
+typedef struct {
+    int pad;
+} DiscoveryRequest;
+
+typedef struct {
+    magic_t magic;
+    DiscoveryRequest request;
+} DiscoveryRequestPacket;
+
+typedef struct {
+    unsigned thread_count;
+} DiscoveryResponse;
+
+typedef struct {
+    magic_t magic;
+    DiscoveryResponse response;
+} DiscoveryResponsePacket;
+
 typedef struct {
     float l, r;
     size_t n;
 } IntegrationRequest;
 
 typedef struct {
+    magic_t magic;
+    IntegrationRequest request;
+} IntegrationRequestPacket;
+
+typedef struct {
     float ival;
 } IntegrationResponse;
+
+typedef struct {
+    magic_t magic;
+    IntegrationResponse response;
+} IntegrationResponsePacket;
 
 typedef int         Socket;
 typedef const char* Port;
 
 int sendAll(Socket sock, const void* buf, size_t* buf_sz_inout);
 int recvAll(Socket sock,       void* buf, size_t* buf_sz_inout);
-
-typedef int discovery_magic_t;
-enum { DISCOVERY_MAGIC_V = 0x1DEAD1 };
 
 #ifndef NETDEBUG
 #define NETDEBUG 0

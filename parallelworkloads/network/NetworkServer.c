@@ -69,8 +69,6 @@ int ServerListen(unsigned short listen_port, ListenInfo* linfo) {
 }
 
 static int ServerRecieveImpl(const ListenInfo* linfo, RequestInfo* rinfo) {
-    static const size_t ireq_sz = sizeof(rinfo->integration_request);
-
     NetDebugPrint("Accept connection on socket %d\n", linfo->socket);
     Socket s = rinfo->socket = accept(linfo->socket, NULL, NULL);
     if (s == -1) {
@@ -81,6 +79,7 @@ static int ServerRecieveImpl(const ListenInfo* linfo, RequestInfo* rinfo) {
 
     struct timeval timeout = {
         .tv_sec = SERVER_RECIEVE_TIMEOUT_S,
+        .tv_usec = (SERVER_RECIEVE_TIMEOUT_S - timeout.tv_sec) * 1e6,
     };
     NetDebugPrint("Set %lds timeout for socket %d\n", timeout.tv_sec, s);
     if (setsockopt(s, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout))) {
@@ -88,13 +87,18 @@ static int ServerRecieveImpl(const ListenInfo* linfo, RequestInfo* rinfo) {
         return 1;
     }
 
+    IntegrationRequestPacket ireqp;
+    size_t rcv_sz = sizeof(ireqp);
     NetDebugPrint("Receive request\n");
-    size_t rcv_sz = ireq_sz;
-    recvAll(s, &rinfo->integration_request, &rcv_sz);
-    NetDebugPrint("Received %zu/%zu bytes\n", rcv_sz, ireq_sz);
-    if (rcv_sz != ireq_sz) {
+    recvAll(s, &ireqp, &rcv_sz);
+    NetDebugPrint("Received %zu/%zu bytes\n", rcv_sz, sizeof(ireqp));
+    if (rcv_sz != sizeof(ireqp)) {
+        return 1;
+    } else if (ireqp.magic != MAGIC_V) {
+        NetDebugPrint("Wrong magic number\n");
         return 1;
     }
+    rinfo->integration_request = ireqp.request;
 
     {   const IntegrationRequest* ir = &rinfo->integration_request;
         NetDebugPrint("Received request [%f; %f]/%zu\n", ir->l, ir->r, ir->n);  }
@@ -112,13 +116,16 @@ int ServerRecieve(const ListenInfo* linfo, RequestInfo* rinfo) {
 }
 
 int ServerRespond(const ResponseInfo* rinfo) {
-    static size_t irsp_sz = sizeof(rinfo->integration_response);
-    size_t send_sz = irsp_sz;
+    IntegrationResponsePacket irespp = {
+        .magic = MAGIC_V,
+        .response = rinfo->integration_response,
+    };
+    size_t send_sz = sizeof(irespp);
     NetDebugPrint("Send response\n");
-    sendAll(rinfo->socket, &rinfo->integration_response, &send_sz);
-    NetDebugPrint("Sent %zu/%zu bytes\n", send_sz, irsp_sz);
+    sendAll(rinfo->socket, &irespp, &send_sz);
+    NetDebugPrint("Sent %zu/%zu bytes\n", send_sz, sizeof(irespp));
     close(rinfo->socket);
-    if (send_sz != irsp_sz) {
+    if (send_sz != sizeof(irespp)) {
         return 1;
     }
     return 0;
@@ -168,23 +175,25 @@ int ServerStartDiscovery(unsigned short discover_port, DiscoveryInfo* dinfo) {
 int ServerProcessDiscoveryRequest(const DiscoveryInfo* dinfo) {
     struct sockaddr_storage they;
     socklen_t they_sz = sizeof(they);
-    discovery_magic_t magic = 0;
 
+    DiscoveryRequestPacket dreqp;
     NetDebugPrint("Wait for discovery request on socket %d\n", dinfo->socket);
-    ssize_t sz = recvfrom(dinfo->socket, &magic, sizeof(magic), 0, (void*) &they, &they_sz);
-    if (sz != sizeof(magic)) {
+    ssize_t sz = recvfrom(dinfo->socket, &dreqp, sizeof(dreqp), 0, (void*) &they, &they_sz);
+    if (sz != sizeof(dreqp)) {
         NetDebugPrint("Failed to recieve discovery request\n");
         return 1;
-    }
-    if (magic != DISCOVERY_MAGIC_V) {
-        NetDebugPrint("Wrong discovery request magic number\n");
+    } else if (dreqp.magic != MAGIC_V) {
+        NetDebugPrint("Wrong magic number\n");
         return 1;
     }
 
-    magic = DISCOVERY_MAGIC_V;
+    DiscoveryResponsePacket drespp = {
+        .magic = MAGIC_V,
+        .response = dinfo->response,
+    };
     NetDebugPrint("Send discovery response\n");
-    sz = sendto(dinfo->socket, &magic, sizeof(magic), 0, (const void*) &they, they_sz);
-    if (sz != sizeof(magic)) {
+    sz = sendto(dinfo->socket, &drespp, sizeof(drespp), 0, (const void*) &they, they_sz);
+    if (sz != sizeof(drespp)) {
         NetDebugPrint("Failed to send discovery response\n");
         return 1;
     }
