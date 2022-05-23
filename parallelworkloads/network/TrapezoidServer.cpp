@@ -7,6 +7,18 @@
 #include <thread>
 
 namespace {
+double RunBenchmark(size_t n_threads, const CPUTopology& topology) {
+    NetDebugPrint("Start throughput benchmark\n");
+    auto t0 = std::chrono::steady_clock::now();
+    constexpr float l = 0.0f;
+    constexpr auto n = 100 * 1000 * 1000;
+    constexpr float r = l + n;
+    scheduleIntegrate(l, r, n, n_threads, topology);
+    auto t1 = std::chrono::steady_clock::now();
+    NetDebugPrint("Finished throughput benchmark\n");
+    return n * 1e9 / std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+}
+
 void StartDiscoveryService(const DiscoveryInfo& dinfo) {
     std::thread([dinfo] {
         bool quit = false;
@@ -53,9 +65,8 @@ IntegrationResponseGen GenerateIntegrationResponse(
     return ret;
 }
 
-int ServerLoop(const ListenInfo& linfo, const DiscoveryInfo& dinfo, size_t n_threads) {
+int ServerLoop(const ListenInfo& linfo, const DiscoveryInfo& dinfo, size_t n_threads, const CPUTopology& topology) {
     StartDiscoveryService(dinfo);
-    auto topology = getSysCPUTopology();
 
     bool quit = false;
     while(!quit) {
@@ -122,7 +133,14 @@ int main(int argc, char* argv[]) {
         std::cerr << "FATAL: Failed to start discovery service on port " << DISCOVER_PORT << "\n";
         return -1;
     }
-    dinfo.response.thread_count = n_threads;
-    ServerLoop(linfo, dinfo, n_threads);
+    auto topology = getSysCPUTopology();
+    dinfo.response.props.thread_count = n_threads;
+    try {
+        dinfo.response.props.throughput = RunBenchmark(n_threads, topology);
+    } catch (const std::system_error& e) {
+        std::cerr << "FATAL: Failed to run throughput benchmark\n";
+        return -1;
+    }
+    ServerLoop(linfo, dinfo, n_threads, topology);
     return 0;
 }

@@ -11,8 +11,8 @@
 #include <unistd.h>
 
 typedef struct {
-    struct sockaddr_in addr;
-    unsigned thread_count;
+    struct sockaddr_in  addr;
+    WorkerProperties    props;
 } WorkerInfo;
 
 typedef struct {
@@ -21,9 +21,9 @@ typedef struct {
 } WorkersInfo;
 
 typedef struct {
-    Socket socket;
-    unsigned thread_count;
-} ServerConnection;
+    Socket              socket;
+    WorkerProperties    props;
+} WorkerConnection;
 
 static int GetWorkersForSocket(
     Socket s, unsigned short discover_port, WorkersInfo* pinfo
@@ -55,6 +55,7 @@ static int GetWorkersForSocket(
     static const long long total_timeout_ns =
         CLIENT_PEER_DISCOVERY_TIMEOUT_S * 1e9;
     long long timeout_ns = total_timeout_ns;
+    NetDebugPrint("Total discovery time: %.3fs\n", total_timeout_ns / 1e9);
 
     struct timespec start, end;
     if (clock_gettime(CLOCK_REALTIME, &start)) {
@@ -83,7 +84,7 @@ static int GetWorkersForSocket(
 
         DiscoveryResponsePacket dresp;
         NetDebugPrint("Recieve discovery broadcast response\n");
-        size_t sz = recvfrom(s, &dresp, sizeof(dresp), 0, &back->addr, &addr_sz);
+        ssize_t sz = recvfrom(s, &dresp, sizeof(dresp), 0, &back->addr, &addr_sz);
         if (sz != sizeof(dresp)) {
             NetDebugPrint("Failed to recieve response\n");
             goto cont;
@@ -91,7 +92,7 @@ static int GetWorkersForSocket(
             NetDebugPrint("Wrong magic number\n");
             goto cont;
         }
-        back->thread_count = dresp.response.thread_count;
+        back->props = dresp.response.props;
         for (size_t i = 0; i < pinfo->worker_count; i++) {
             if (memcmp(&pinfo->workers[i], back, addr_sz) == 0) {
                 NetDebugPrint("Duplicate\n");
@@ -142,22 +143,22 @@ static int SendAndRecieve(
         .request = *ireq,
     };
     size_t send_sz = sizeof(ireqp);
-    NetDebugPrint("Send request\n");
+    NetDebugPrint("Send request to socket %d\n", s);
     sendAll(s, &ireqp, &send_sz);
-    NetDebugPrint("Sent %zu/%zu bytes\n", send_sz, sizeof(ireqp));
+    NetDebugPrint("Sent %zu/%zu bytes to socket %d\n", send_sz, sizeof(ireqp), s);
     if (send_sz != sizeof(ireqp)) {
         return -1;
     }
 
     IntegrationResponsePacket irespp;
     size_t rcv_sz = sizeof(irespp);
-    NetDebugPrint("Receive response\n");
+    NetDebugPrint("Receive response from socket %d\n", s);
     recvAll(s, &irespp, &rcv_sz);
-    NetDebugPrint("Received %zu/%zu bytes\n", rcv_sz, sizeof(irespp));
+    NetDebugPrint("Received %zu/%zu bytes from socket %d\n", rcv_sz, sizeof(irespp), s);
     if (rcv_sz != sizeof(irespp)) {
         return -1;
     } else if (irespp.magic != MAGIC_V) {
-        NetDebugPrint("Wrong magic number\n");
+        NetDebugPrint("Wrong magic number for socket %d\n", s);
         return -1;
     }
     *iresp_out = irespp.response;
@@ -197,7 +198,7 @@ static void GetResponsesImpl(
     }
 }
 
-static int GetResponses(ServerConnection* connections, size_t con_cnt,
+static int GetResponses(WorkerConnection* connections, size_t con_cnt,
     const IntegrationRequest* ireq, IntegrationResponse* iresp_out
 ) {
     pthread_t* thread_ids = calloc(con_cnt, sizeof(*thread_ids));
@@ -205,23 +206,42 @@ static int GetResponses(ServerConnection* connections, size_t con_cnt,
     
     int ret = 0;
     if (thread_ids and thread_datas) {
-        size_t total_thread_count = 0;
+        double total_throughput = 0;
         for (size_t i = 0; i < con_cnt; i++) {
-            total_thread_count += connections[i].thread_count;
+            total_throughput += connections[i].props.throughput;
         }
 
-        float step = (ireq->r - ireq->l) / total_thread_count;
+        size_t n = ireq->n;
+        size_t used_n = 0;
+        float step = (ireq->r - ireq->l) / n;
         float l = ireq->l;
-        size_t n = ireq->n / total_thread_count;
-        for (size_t i = 0; i < con_cnt; i++) {
-            float r = l + connections[i].thread_count * step;
+        for (size_t i = 0; i < con_cnt - 1; i++) {
+            size_t this_n = connections[i].props.throughput / total_throughput * n;
+            used_n += this_n;
+            float r = l + this_n * step;
             thread_datas[i].s    = connections[i].socket;
             thread_datas[i].ireq = (IntegrationRequest) {
                 .l = l,
                 .r = r,
-                .n = n * connections[i].thread_count,
+                .n = this_n,
             };
             l = r;
+        }
+        // Schedule last piece
+        {
+            size_t i = con_cnt - 1;
+            size_t this_n = n - used_n;
+            float r = ireq->r;
+            thread_datas[i].s    = connections[i].socket;
+            thread_datas[i].ireq = (IntegrationRequest) {
+                .l = l,
+                .r = r,
+                .n = this_n,
+            };
+        }
+        for (size_t i = 0; i < con_cnt; i++) {
+            const IntegrationRequest* ir = &thread_datas[i].ireq;
+            NetDebugPrint("Schedule request [%f; %f]/%zu to socket %d\n", ir->l, ir->r, ir->n, connections[i].socket);
         }
 
         GetResponsesImpl(con_cnt, thread_ids, thread_datas);
@@ -263,10 +283,11 @@ int ClientSend(const IntegrationRequest* ireq, IntegrationResponse* iresp_out) {
     for (size_t i = 0; i < pinfo.worker_count; i++) {
         char buf[16];
         inet_ntop(AF_INET, &pinfo.workers[i].addr.sin_addr, buf, sizeof(buf));
-        NetDebugPrint("Found worker %zu at %s with %u threads\n", i, buf, pinfo.workers[i].thread_count);
+        NetDebugPrint("Found worker %zu at %s with %u threads and throughput %.0f/s\n",
+            i, buf, pinfo.workers[i].props.thread_count, pinfo.workers[i].props.throughput);
     }
 
-    ServerConnection* connections = calloc(pinfo.worker_count, sizeof(*connections));
+    WorkerConnection* connections = calloc(pinfo.worker_count, sizeof(*connections));
     if (!connections) {
         free(pinfo.workers);
         NetDebugPrint("Allocation error\n");
@@ -290,11 +311,11 @@ int ClientSend(const IntegrationRequest* ireq, IntegrationResponse* iresp_out) {
             close(s);
             continue;
         }
-        connections[con_cnt++] = (ServerConnection) {
+        connections[con_cnt++] = (WorkerConnection) {
             .socket = s,
-            .thread_count = pinfo.workers[i].thread_count,
+            .props  = pinfo.workers[i].props,
         };
-        NetDebugPrint("Connected to socket %d\n", s);
+        NetDebugPrint("Connected to socket %d for worker %zu\n", s, i);
     }
     free(pinfo.workers);
 

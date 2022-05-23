@@ -13,6 +13,11 @@ typedef int magic_t;
 enum { MAGIC_V = 0x1DEAD1 };
 
 typedef struct {
+    unsigned thread_count;
+    double   throughput;
+} WorkerProperties;
+
+typedef struct {
     int pad;
 } DiscoveryRequest;
 
@@ -22,7 +27,7 @@ typedef struct {
 } DiscoveryRequestPacket;
 
 typedef struct {
-    unsigned thread_count;
+    WorkerProperties props;
 } DiscoveryResponse;
 
 typedef struct {
